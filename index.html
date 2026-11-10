@@ -1,0 +1,354 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ドメイン調査</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+JP:wght@400;500;600&display=swap">
+<style>
+/* Layout: 1カラムの調査シート。上に入力、下にRDAP/NS/A/MXを罫線で区切って縦に並べる。 */
+:root{
+  --bg:#f3f5f5; --surface:#ffffff; --ink:#14201f; --muted:#5a6b69; --line:#d5dddc;
+  --accent:#0b6b66; --accent-ink:#ffffff; --chip:#e4eceb;
+  --good:#1c7a3e; --warn:#a15c00; --bad:#b3261e;
+  --font-sans:"IBM Plex Sans JP","Hiragino Sans","Yu Gothic UI","Meiryo",system-ui,sans-serif;
+  --font-mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  color-scheme:light;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --bg:#0f1716; --surface:#162120; --ink:#e4eceb; --muted:#93a7a4; --line:#2a3b39;
+    --accent:#4cc2b8; --accent-ink:#05211f; --chip:#213130;
+    --good:#5fd08a; --warn:#f0b45a; --bad:#ff8a80; color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0f1716; --surface:#162120; --ink:#e4eceb; --muted:#93a7a4; --line:#2a3b39;
+  --accent:#4cc2b8; --accent-ink:#05211f; --chip:#213130;
+  --good:#5fd08a; --warn:#f0b45a; --bad:#ff8a80; color-scheme:dark;
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{
+  margin:0; background:var(--bg); color:var(--ink);
+  font:15px/1.7 var(--font-sans);
+  padding-block:40px 64px;
+  padding-left:max(16px,env(safe-area-inset-left,0px));
+  padding-right:max(16px,env(safe-area-inset-right,0px));
+}
+.wrap{max-width:860px;margin:0 auto}
+.mono{font-family:var(--font-mono);font-size:.93em}
+h1{font-size:1.5rem;line-height:1.3;margin:0 0 4px;font-weight:600;letter-spacing:.01em}
+.lead{margin:0 0 24px;color:var(--muted);font-size:.93rem}
+
+form{display:flex;gap:8px;flex-wrap:wrap}
+.field{flex:1 1 280px;min-width:0}
+input[type=text]{
+  width:100%;height:48px;padding:0 14px;border:1px solid var(--line);border-radius:6px;
+  background:var(--surface);color:var(--ink);font:inherit;font-family:var(--font-mono);font-size:15px;
+}
+input[type=text]::placeholder{color:var(--muted);opacity:.8}
+button{font:inherit;cursor:pointer}
+.go{
+  height:48px;padding:0 24px;border:0;border-radius:6px;background:var(--accent);color:var(--accent-ink);font-weight:600;
+}
+.go:disabled{opacity:.6;cursor:progress}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.examples{margin:10px 0 0;display:flex;gap:8px;flex-wrap:wrap;align-items:center;color:var(--muted);font-size:.85rem}
+.ex{border:1px solid var(--line);background:transparent;color:var(--ink);border-radius:999px;padding:2px 12px;font-family:var(--font-mono);font-size:.82rem}
+.ex:hover{border-color:var(--accent)}
+.err-input{margin:10px 0 0;color:var(--bad);font-size:.9rem}
+
+.target{margin:28px 0 0;padding:12px 0;border-top:1px solid var(--line);display:flex;gap:6px 20px;flex-wrap:wrap;color:var(--muted);font-size:.88rem}
+.target b{color:var(--ink);font-weight:500}
+
+.sec{border-top:1px solid var(--line);padding-block:22px}
+.sec > header{display:flex;align-items:center;gap:10px;margin-bottom:12px}
+.sec h2{font-size:1.02rem;margin:0;font-weight:600}
+.tag{font-family:var(--font-mono);font-size:.74rem;letter-spacing:.06em;background:var(--chip);color:var(--muted);padding:1px 8px;border-radius:4px}
+.hint{color:var(--muted);font-size:.9rem;margin:0}
+.loading{color:var(--muted);font-size:.9rem}
+.loading::before{content:"";display:inline-block;width:10px;height:10px;margin-right:8px;border:2px solid var(--line);border-top-color:var(--accent);border-radius:50%;animation:spin .8s linear infinite;vertical-align:-1px}
+@keyframes spin{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion:reduce){.loading::before{animation:none}}
+.problem{color:var(--bad);font-size:.92rem;margin:0}
+.problem a{color:inherit}
+.sub{margin:14px 0 6px;font-size:.82rem;color:var(--muted);font-family:var(--font-mono)}
+.sub:first-child{margin-top:0}
+
+.kv{display:grid;grid-template-columns:minmax(7rem,10rem) minmax(0,1fr);gap:8px 16px;margin:0}
+.kv .k{color:var(--muted);font-size:.88rem}
+.kv .v{overflow-wrap:anywhere;min-width:0}
+@media (max-width:520px){.kv{grid-template-columns:minmax(0,1fr);gap:0}.kv .k{margin-top:10px}}
+.pill{display:inline-block;font-family:var(--font-mono);font-size:.78rem;padding:0 8px;border-radius:4px;background:var(--chip);margin:0 6px 4px 0}
+.pill.good{color:var(--good)} .pill.warn{color:var(--warn)} .pill.bad{color:var(--bad)}
+.st{display:block;line-height:1.5;margin-bottom:4px}
+.st small{color:var(--muted);margin-left:6px}
+.scroll{overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-family:var(--font-mono);font-size:.86rem}
+th{text-align:left;font-weight:500;color:var(--muted);font-size:.78rem;padding:4px 14px 4px 0;border-bottom:1px solid var(--line);white-space:nowrap}
+td{padding:7px 14px 7px 0;border-bottom:1px solid var(--line);vertical-align:top;white-space:nowrap}
+td.data{white-space:normal;overflow-wrap:anywhere;min-width:12rem}
+tr:last-child td{border-bottom:0}
+details{margin-top:14px}
+summary{cursor:pointer;color:var(--muted);font-size:.88rem}
+pre{margin:10px 0 0;padding:12px;background:var(--surface);border:1px solid var(--line);border-radius:6px;max-height:360px;overflow:auto;font-size:.8rem;line-height:1.5}
+.foot{margin-top:28px;padding-top:16px;border-top:1px solid var(--line);color:var(--muted);font-size:.8rem}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>ドメイン調査</h1>
+  <p class="lead">URLまたはドメイン名を入力すると、登録情報（RDAP）、ネームサーバー、Aレコード、MXレコードをまとめて確認できます。</p>
+
+  <form id="f" autocomplete="off">
+    <div class="field"><input type="text" id="q" placeholder="https://www.example.com/path" inputmode="url" autocapitalize="off" spellcheck="false" aria-label="URLまたはドメイン名"></div>
+    <button class="go" id="go" type="submit">調べる</button>
+  </form>
+  <div class="examples" aria-label="入力例">
+    <span>例</span>
+    <button type="button" class="ex" data-q="https://www.iana.org/domains">iana.org</button>
+    <button type="button" class="ex" data-q="example.com">example.com</button>
+    <button type="button" class="ex" data-q="https://jprs.jp/">jprs.jp</button>
+  </div>
+  <p class="err-input" id="inerr" role="alert" hidden></p>
+
+  <div class="target" id="target" hidden></div>
+
+  <section class="sec" id="s-rdap">
+    <header><span class="tag">RDAP</span><h2>登録情報</h2></header>
+    <div id="b-rdap"><p class="hint">登録日、有効期限、レジストラ、ドメインのステータスを表示します。</p></div>
+  </section>
+  <section class="sec" id="s-ns">
+    <header><span class="tag">NS</span><h2>ネームサーバー</h2></header>
+    <div id="b-ns"><p class="hint">ドメインの名前解決を担当するサーバーを表示します。</p></div>
+  </section>
+  <section class="sec" id="s-a">
+    <header><span class="tag">A</span><h2>Aレコード</h2></header>
+    <div id="b-a"><p class="hint">ドメイン名に対応するIPv4アドレスを表示します。</p></div>
+  </section>
+  <section class="sec" id="s-mx">
+    <header><span class="tag">MX</span><h2>MXレコード</h2></header>
+    <div id="b-mx"><p class="hint">メールの受信先サーバーを優先度順に表示します。</p></div>
+  </section>
+
+  <p class="foot">DNSの問い合わせは Google Public DNS（失敗時は Cloudflare）の DNS over HTTPS、登録情報は rdap.org 経由で取得します。入力したドメイン名はこれらのサービスに送信されます。登録ドメインは一般的なドメイン接尾辞（co.jp など）から推定しており、都道府県型JPドメインなど一部は判定できません。</p>
+</div>
+
+<script>
+// <pure>
+const SLD2 = new Set([
+  'co.jp','or.jp','ne.jp','ac.jp','go.jp','ed.jp','gr.jp','ad.jp','lg.jp',
+  'co.uk','org.uk','me.uk','ltd.uk','plc.uk','ac.uk','gov.uk','net.uk',
+  'com.au','net.au','org.au','edu.au','gov.au','com.br','net.br','org.br',
+  'com.cn','net.cn','org.cn','gov.cn','co.nz','net.nz','org.nz','co.in','net.in','org.in',
+  'co.kr','or.kr','ne.kr','go.kr','com.tw','org.tw','com.hk','com.sg','co.za','com.mx',
+  'com.tr','co.id','com.my','com.ph','com.vn','co.th','com.ar','com.co','com.pl','co.il'
+]);
+const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+function registrable(host){
+  const l = host.split('.');
+  if (l.length <= 2) return host;
+  return SLD2.has(l.slice(-2).join('.')) ? l.slice(-3).join('.') : l.slice(-2).join('.');
+}
+function parseInput(raw){
+  let s = String(raw || '').trim();
+  if (!s) throw new Error('URLまたはドメイン名を入力してください。');
+  if (!/^[a-z][a-z0-9+.-]*:\/\//i.test(s)) s = 'http://' + s;
+  let u;
+  try { u = new URL(s); } catch (e) { throw new Error('URLとして読み取れませんでした。例: https://www.example.com/'); }
+  const host = u.hostname.toLowerCase().replace(/\.$/, '');
+  if (!host) throw new Error('ドメイン名を読み取れませんでした。');
+  if (/^\d{1,3}(\.\d{1,3}){3}$/.test(host) || host.includes(':')) throw new Error('IPアドレスではなくドメイン名を入力してください。');
+  if (!host.includes('.')) throw new Error('ドメイン名にドットがありません（例: example.com）。');
+  return { host, domain: registrable(host) };
+}
+
+const EVENT_JA = {
+  'registration':'登録日','expiration':'有効期限','last changed':'最終更新',
+  'last update of rdap database':'RDAP DB更新','transfer':'移管日','reregistration':'再登録日'
+};
+const STATUS_JA = {
+  'active':'有効','ok':'有効','inactive':'無効',
+  'client transfer prohibited':'移管ロック（レジストラ設定）','server transfer prohibited':'移管ロック（レジストリ設定）',
+  'client delete prohibited':'削除ロック（レジストラ設定）','server delete prohibited':'削除ロック（レジストリ設定）',
+  'client update prohibited':'更新ロック（レジストラ設定）','server update prohibited':'更新ロック（レジストリ設定）',
+  'client renew prohibited':'更新ロック（レジストラ設定）','server renew prohibited':'更新ロック（レジストリ設定）',
+  'client hold':'停止中（レジストラ設定）','server hold':'停止中（レジストリ設定）',
+  'pending delete':'削除待ち','redemption period':'償還期間','pending create':'作成待ち',
+  'pending transfer':'移管待ち','pending update':'更新待ち','pending renew':'更新待ち'
+};
+const normStatus = s => String(s).replace(/([a-z])([A-Z])/g, '$1 $2').toLowerCase().trim();
+function statusClass(n){
+  if (n === 'active' || n === 'ok') return 'good';
+  if (/hold|pending delete|redemption|inactive/.test(n)) return 'bad';
+  if (/pending/.test(n)) return 'warn';
+  return '';
+}
+function fmtDate(iso){
+  const d = new Date(iso);
+  if (isNaN(d)) return esc(iso);
+  const p = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}/${p(d.getMonth()+1)}/${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+function vcardFn(ent){
+  const arr = ent && ent.vcardArray && ent.vcardArray[1];
+  if (!Array.isArray(arr)) return '';
+  const f = arr.find(x => x[0] === 'fn');
+  return f ? f[3] : '';
+}
+
+function rdapView(j, now){
+  now = now || Date.now();
+  const rows = [];
+  const add = (k, v) => { if (v) rows.push(`<div class="k">${esc(k)}</div><div class="v">${v}</div>`); };
+  add('ドメイン', `<span class="mono">${esc(String(j.ldhName || j.unicodeName || '').toLowerCase())}</span>`);
+  const ev = {};
+  (j.events || []).forEach(e => { if (e.eventAction) ev[String(e.eventAction).toLowerCase()] = e.eventDate; });
+  ['registration','expiration','last changed','last update of rdap database','transfer','reregistration'].forEach(a => {
+    if (!ev[a]) return;
+    let html = `<span class="mono">${fmtDate(ev[a])}</span>`;
+    if (a === 'expiration') {
+      const days = Math.ceil((new Date(ev[a]) - now) / 864e5);
+      if (!isNaN(days)) {
+        const cls = days < 0 ? 'bad' : days <= 30 ? 'warn' : 'good';
+        const txt = days < 0 ? `期限切れ（${-days}日経過）` : `あと${days}日`;
+        html += ` <span class="pill ${cls}">${txt}</span>`;
+      }
+    }
+    add(EVENT_JA[a] || a, html);
+  });
+  const reg = (j.entities || []).find(e => (e.roles || []).includes('registrar'));
+  if (reg) {
+    const name = vcardFn(reg);
+    const iana = (reg.publicIds || []).find(p => /iana/i.test(p.type || ''));
+    add('レジストラ', (name ? esc(name) : '') + (iana ? ` <span class="pill">IANA ${esc(iana.identifier)}</span>` : ''));
+  }
+  if (Array.isArray(j.status) && j.status.length) {
+    add('ステータス', j.status.map(s => {
+      const n = normStatus(s);
+      const ja = STATUS_JA[n];
+      return `<span class="st"><span class="pill ${statusClass(n)}">${esc(s)}</span>${ja ? `<small>${esc(ja)}</small>` : ''}</span>`;
+    }).join(''));
+  }
+  if (j.secureDNS && typeof j.secureDNS.delegationSigned === 'boolean') {
+    add('DNSSEC', j.secureDNS.delegationSigned ? '<span class="pill good">署名あり</span>' : '<span class="pill">署名なし</span>');
+  }
+  const ns = (j.nameservers || []).map(n => n.ldhName || n.unicodeName).filter(Boolean);
+  if (ns.length) add('登録済みNS', ns.map(n => `<div class="mono">${esc(String(n).toLowerCase())}</div>`).join(''));
+  return `<div class="kv">${rows.join('')}</div>`;
+}
+
+const TYPES = {1:'A',2:'NS',5:'CNAME',6:'SOA',15:'MX',16:'TXT',28:'AAAA'};
+const RCODE = {1:'FORMERR',2:'SERVFAIL',3:'NXDOMAIN',4:'NOTIMP',5:'REFUSED'};
+function dnsView(resp, want){
+  if (resp.Status === 3) return '<p class="hint">このドメイン名は存在しません（NXDOMAIN）。</p>';
+  if (resp.Status && resp.Status !== 0) return `<p class="problem">DNSサーバーがエラーを返しました（${esc(RCODE[resp.Status] || resp.Status)}）。</p>`;
+  let ans = (resp.Answer || []).slice();
+  if (!ans.length) return '<p class="hint">レコードがありません。</p>';
+  const clean = d => String(d).replace(/\.$/, '');
+  const parsed = ans.map(a => {
+    const type = TYPES[a.type] || ('TYPE' + a.type);
+    let pri = null, data = String(a.data);
+    if (a.type === 15) { const m = data.match(/^(\d+)\s+(.+)$/); if (m) { pri = +m[1]; data = clean(m[2]); } }
+    else if (a.type === 2 || a.type === 5) data = clean(data);
+    return { name: clean(a.name), type, ttl: a.TTL, pri, data };
+  });
+  if (want === 'MX') parsed.sort((x, y) => (x.pri ?? 0) - (y.pri ?? 0));
+  const hasPri = parsed.some(r => r.pri !== null);
+  const body = parsed.map(r => `<tr><td>${esc(r.name)}</td><td>${esc(r.type)}</td><td>${esc(r.ttl)}</td>${hasPri ? `<td>${r.pri === null ? '' : esc(r.pri)}</td>` : ''}<td class="data">${esc(r.data)}</td></tr>`).join('');
+  return `<div class="scroll"><table><thead><tr><th>名前</th><th>種別</th><th>TTL(秒)</th>${hasPri ? '<th>優先度</th>' : ''}<th>値</th></tr></thead><tbody>${body}</tbody></table></div>`;
+}
+// </pure>
+
+const $ = id => document.getElementById(id);
+
+async function doh(name, type){
+  const n = encodeURIComponent(name);
+  const urls = [
+    `https://dns.google/resolve?name=${n}&type=${type}`,
+    `https://cloudflare-dns.com/dns-query?name=${n}&type=${type}&ct=application/dns-json`
+  ];
+  let last;
+  for (const u of urls) {
+    try {
+      const r = await fetch(u);
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      return await r.json();
+    } catch (e) { last = e; }
+  }
+  throw last || new Error('DNS問い合わせに失敗しました');
+}
+
+async function rdapFetch(domain){
+  const direct = `https://rdap.org/domain/${encodeURIComponent(domain)}`;
+  let url = direct;
+  try {
+    const r = await fetch(direct, { headers: { accept: 'application/rdap+json, application/json' } });
+    if (r.status === 404) { const e = new Error('notfound'); e.notfound = true; e.url = r.url || direct; throw e; }
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    return { json: await r.json(), url: r.url || direct };
+  } catch (e) {
+    if (e.notfound) throw e;
+  }
+  // フォールバック: IANAのブートストラップから該当TLDのRDAPサーバーを直接引く
+  const tld = domain.split('.').pop();
+  const b = await (await fetch('https://data.iana.org/rdap/dns.json')).json();
+  const svc = (b.services || []).find(s => s[0].includes(tld));
+  if (!svc) { const e = new Error('notfound'); e.notfound = true; e.url = direct; e.unsupported = true; throw e; }
+  url = svc[1][0].replace(/\/?$/, '/') + 'domain/' + encodeURIComponent(domain);
+  const r2 = await fetch(url, { headers: { accept: 'application/rdap+json, application/json' } });
+  if (r2.status === 404) { const e = new Error('notfound'); e.notfound = true; e.url = url; throw e; }
+  if (!r2.ok) { const e = new Error('HTTP ' + r2.status); e.url = url; throw e; }
+  return { json: await r2.json(), url };
+}
+
+const setBody = (id, html) => { $('b-' + id).innerHTML = html; };
+const loading = id => setBody(id, '<p class="loading">取得中…</p>');
+const failure = (id, e, link) => setBody(id, `<p class="problem">取得できませんでした（${esc(e && e.message || e)}）。ネットワーク接続を確認してもう一度お試しください。${link ? ` <a href="${esc(link)}" target="_blank" rel="noopener">RDAPを直接開く</a>` : ''}</p>`);
+
+let runId = 0;
+async function run(raw){
+  const my = ++runId;
+  $('inerr').hidden = true;
+  let t;
+  try { t = parseInput(raw); }
+  catch (e) { $('inerr').textContent = e.message; $('inerr').hidden = false; return; }
+  const { host, domain } = t;
+  $('q').value = raw.trim();
+  $('go').disabled = true;
+  const tg = $('target');
+  tg.hidden = false;
+  tg.innerHTML = `<span>調査対象 <b class="mono">${esc(domain)}</b></span>` + (host !== domain ? `<span>入力ホスト <b class="mono">${esc(host)}</b></span>` : '');
+  ['rdap','ns','a','mx'].forEach(loading);
+
+  const live = fn => (...args) => { if (my === runId) fn(...args); };
+
+  const jobs = [];
+  jobs.push(rdapFetch(domain).then(live(({ json, url }) => {
+    setBody('rdap', rdapView(json) + `<details><summary>RDAPの生データ（JSON）</summary><pre>${esc(JSON.stringify(json, null, 2))}</pre></details>`);
+  })).catch(live(e => {
+    if (e.notfound) setBody('rdap', `<p class="hint">${e.unsupported ? 'このTLDはRDAPに対応していないか、情報が公開されていません。' : 'RDAPに登録情報が見つかりません。未登録のドメイン、またはRDAP未対応のTLDの可能性があります。'}</p>`);
+    else failure('rdap', e, e.url || `https://rdap.org/domain/${encodeURIComponent(domain)}`);
+  })));
+
+  jobs.push(doh(domain, 'NS').then(live(r => setBody('ns', dnsView(r, 'NS')))).catch(live(e => failure('ns', e))));
+  jobs.push(doh(domain, 'MX').then(live(r => setBody('mx', dnsView(r, 'MX')))).catch(live(e => failure('mx', e))));
+
+  const aTargets = host !== domain ? [domain, host] : [domain];
+  jobs.push(Promise.all(aTargets.map(n => doh(n, 'A').then(r => ({ n, html: dnsView(r, 'A') }))))
+    .then(live(list => setBody('a', list.map(x => (list.length > 1 ? `<div class="sub">${esc(x.n)}</div>` : '') + x.html).join(''))))
+    .catch(live(e => failure('a', e))));
+
+  await Promise.allSettled(jobs);
+  if (my === runId) $('go').disabled = false;
+}
+
+$('f').addEventListener('submit', e => { e.preventDefault(); run($('q').value); });
+document.querySelectorAll('.ex').forEach(b => b.addEventListener('click', () => run(b.dataset.q)));
+</script>
+</body>
+</html>
